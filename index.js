@@ -35,11 +35,13 @@ server.get('/printers', (req, res) => {
         stdout = stdout.filter(item => item);
         for (i = 0; i < stdout.length; i++) {
             if (stdout[i] == " \r\r\n" || stdout[i] == "\r\r\n") {
-                printers[j] = { namePrinter: stdout[i + 1].trim(), systemName: stdout[i + 4].trim(), statusPrinter: stdout[i + 3].trim() };
+                const regexString = /(?<=\/\/)(.*?)(:)/
+                const locationString = stdout[i + 4].trim().match(regexString)
+                printers[j] = { name: stdout[i + 1].trim(), location: locationString.trim() };
                 j++;
             }
         }
-        res.status(200).send({ status: false, mess: "err get list printer", data: printers })
+        return res.json(arrayPrinter)
     } catch {
         res.status(404).send({ status: false, mess: "err get list printer" })
     }
@@ -77,24 +79,46 @@ server.get('/printers', (req, res) => {
 
 server.post('/test', async (req, res) => {
 
-    // print on linux
-
-    function print(nameFilePrint, namePrinter) {
-        if (platform == 'darwin') {
+    function printInLinux(nameFilePrint, namePrinter) {
+        try {
             const stringPrint = `lp -d ${namePrinter} ${nameFilePrint}`
             console.log(stringPrint)
             const resPrinter = execSync(stringPrint, { encoding: "ascii" });
             console.log(resPrinter)
+            console.log("=====>>>> printing")
             return res.status(200).send({success : false, mess:"print file success"})
-        } if (platform == 'win32') {
-            
+        } catch {
+            return res.status(404).send({success : false, mess:"err when printer file pdf in linux"})
         }
     }
 
+    function printInWin32(port, nameFilePrint, namePrinter) {
+        try {
+            const stringPrintInWin = `lpr -S ${port} -P ${namePrinter} -o -l ${nameFilePrint}`
+            const resPrinterInWin = execSync(stringPrintInWin, { encoding: "ascii" });
+            return res.status(200).send({success : false, mess:"print file success"})
+            
+        } catch {
+            return res.status(404).send({success : false, mess:"err when printer file pdf in windows"})
+        }
+    }
+
+    //random name string
+    function makeNameString(length) {
+        var result           = '';
+        var characters       = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        var charactersLength = characters.length;
+        for ( var i = 0; i < length; i++ ) {
+          result += characters.charAt(Math.floor(Math.random() * charactersLength));
+       }
+       return result;
+    }
+
     if (req.body.base64String, req.body.type, req.body.namePrinter) {
-        if (req.body.type = "IMAGE") {
+        const makeRandomFileStringName = makeNameString(7)
+        if (req.body.type == "IMAGE") {
             const base64Data = req.body.base64String.replace(/^data:image\/png;base64,/, "");
-            require("fs").writeFile("out.png", base64Data, 'base64', function(err) {
+            require("fs").writeFile(`${makeRandomFileStringName}.png`, base64Data, 'base64', function(err) {
                 if (err) {
                     return res.status(505).send("Err when convert base64 to img")
                 }
@@ -104,31 +128,29 @@ server.post('/test', async (req, res) => {
             function convertToPDf() {
                 try {
                     doc = new PDFDocument
-                    doc.pipe(fs.createWriteStream('output.pdf'))
+                    doc.pipe(fs.createWriteStream(`${makeRandomFileStringName}.pdf`))
 
-                    doc.image('out.png', {
+                    doc.image(`${makeRandomFileStringName}.png`, {
                         fit: [250, 300],
                         align: 'center',
                         valign: 'center'
                     });
                     doc.end()
                     //print
-
-                    print('out.png', req.body.namePrinter)
-
+                    printInLinux(`${makeRandomFileStringName}.pdf`, req.body.namePrinter)
                 } catch {
                     return res.status(505).send("err convert img to pdf")
                 }
             }
-        }
-        if (req.body.type = "PDF") {
-            var bin = window.atob(stringToDecode);
-            fs.writeFile('result_binary.pdf', bin, 'binary', error => {
+        }else if (req.body.type == "PDF") {
+            const bin = atob(req.body.base64String);
+            fs.writeFile(`${makeRandomFileStringName}.pdf`, bin, 'binary', error => {
                 if (error) {
-                    throw error;
+                    return res.status(505).send("err convert base 64 to pdf")
                 } else {
-                    print('result_binary.pdf', req.body.namePrinter)
+                    // printInWin32(`${makeRandomFileStringName}.pdf`, req.body.namePrinter)
                     console.log('binary saved!');
+                    printInLinux(`${makeRandomFileStringName}.pdf`, req.body.namePrinter)
                 }
             });
         }
